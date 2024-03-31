@@ -1,5 +1,5 @@
 import db.{send_data}
-import counter
+import expenses
 import gleam/bytes_builder
 import gleam/erlang
 import gleam/erlang/process.{type Selector, type Subject}
@@ -11,6 +11,7 @@ import gleam/json.{array, int, null, object, string}
 import gleam/option.{type Option, None}
 import gleam/otp/actor
 import gleam/result
+import gleam/string_builder
 import lustre
 import lustre/attribute
 import lustre/element.{type Element}
@@ -22,30 +23,53 @@ import mist.{
 }
 
 pub fn main() {
+  db.create_table()
+
   let assert Ok(_) =
     fn(req: Request(Connection)) -> Response(ResponseData) {
       case request.path_segments(req) {
         ["send-data"] -> {
-          db.send_data()
+          let query = case request.get_query(req) {
+            Ok(query) -> query
+            Error(_) -> []
+          }
+          let expense_name = case
+            query
+            |> iterator.from_list
+            |> iterator.find(fn(name_value) { name_value.0 == "name" })
+          {
+            Ok(name_value) -> name_value.1
+            Error(_) -> ""
+          }
+          let expense_amount =
+            case
+              query
+              |> iterator.from_list
+              |> iterator.find(fn(name_value) { name_value.0 == "amount" })
+            {
+              Ok(name_value) -> name_value.1
+              Error(_) -> ""
+            }
+            |> int.parse
+            |> result.unwrap(0)
+
+          db.send_data(#(expense_name, expense_amount))
 
           send_default_page()
         }
 
         ["get-data"] -> {
-          let data = db.get_data()
-          let cats =
-            json.object(
-              data
-              |> iterator.from_list
-              |> iterator.map(fn(cat) { #("name", json.string(cat.0)) })
-              |> iterator.to_list,
-            )
-            |> json.to_string_builder
+          let data =
+            db.get_data()
+            |> iterator.from_list
+            |> iterator.map(fn(expense) { json.to_string_builder(expense) })
+            |> iterator.to_list
+            |> string_builder.concat
 
           response.new(200)
           |> response.prepend_header("content-type", "application/json")
           |> response.set_body(
-            cats
+            data
             |> bytes_builder.from_string_builder
             |> mist.Bytes,
           )
@@ -53,7 +77,7 @@ pub fn main() {
 
         // Set up the websocket connection to the client. This is how we send
         // DOM updates to the browser and receive events from the client.
-        ["counter"] ->
+        ["expenses"] ->
           mist.websocket(
             request: req,
             on_init: socket_init,
@@ -112,7 +136,7 @@ fn send_default_page() -> Response(ResponseData) {
         ),
       ]),
       html.body([], [
-        server_component.component([server_component.route("/counter")]),
+        server_component.component([server_component.route("/expenses")]),
       ]),
     ])
     |> element.to_document_string_builder
@@ -121,17 +145,17 @@ fn send_default_page() -> Response(ResponseData) {
   )
 }
 
-type Counter =
-  Subject(lustre.Action(counter.Msg, lustre.ServerComponent))
+type Expenses =
+  Subject(lustre.Action(expenses.Msg, lustre.ServerComponent))
 
 fn socket_init(
   conn: WebsocketConnection,
-) -> #(Counter, Option(Selector(lustre.Patch(counter.Msg)))) {
-  let app = counter.app()
-  let assert Ok(counter) = lustre.start_actor(app, 0)
+) -> #(Expenses, Option(Selector(lustre.Patch(expenses.Msg)))) {
+  let app = expenses.app()
+  let assert Ok(expenses) = lustre.start_actor(app, 0)
 
   process.send(
-    counter,
+    expenses,
     server_component.subscribe(
       // server components can have many connected clients, so we need a way to
       // identify this client.
@@ -157,7 +181,7 @@ fn socket_init(
   #(
     // we store the server component's `Subject` as this socket's state so we
     // can shut it down when the socket is closed.
-    counter,
+    expenses,
     // the `None` here means we aren't planning on receiving any messages from
     // elsewhere and dont need a `Selector` to handle them.
     None,
@@ -165,9 +189,9 @@ fn socket_init(
 }
 
 fn socket_update(
-  counter: Counter,
+  expenses: Expenses,
   _conn: WebsocketConnection,
-  msg: WebsocketMessage(lustre.Patch(counter.Msg)),
+  msg: WebsocketMessage(lustre.Patch(expenses.Msg)),
 ) {
   case msg {
     mist.Text(json) -> {
@@ -176,19 +200,19 @@ fn socket_update(
       let action = json.decode(json, server_component.decode_action)
 
       case action {
-        Ok(action) -> process.send(counter, action)
+        Ok(action) -> process.send(expenses, action)
         Error(_) -> Nil
       }
 
-      actor.continue(counter)
+      actor.continue(expenses)
     }
 
-    mist.Binary(_) -> actor.continue(counter)
-    mist.Custom(_) -> actor.continue(counter)
+    mist.Binary(_) -> actor.continue(expenses)
+    mist.Custom(_) -> actor.continue(expenses)
     mist.Closed | mist.Shutdown -> actor.Stop(process.Normal)
   }
 }
 
-fn socket_close(counter: Counter) {
-  process.send(counter, lustre.shutdown())
+fn socket_close(expenses: Expenses) {
+  process.send(expenses, lustre.shutdown())
 }
