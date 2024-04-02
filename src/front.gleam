@@ -1,14 +1,12 @@
+import db.{create_table, get_data, send_data}
 import gleam/dynamic
-import gleam/fetch
+import gleam/httpc
 import gleam/http/request
 import gleam/int
 import gleam/io
-import gleam/javascript/promise
-import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/string
 import lustre
 import lustre/attribute
 import lustre/effect
@@ -41,8 +39,8 @@ fn init(_) -> #(Model, effect.Effect(Msg)) {
 // UPDATE ----------------------------------------------------------------------
 
 pub type Msg {
-  GotResponse(Result(Nil, HttpError))
-  GotExpenses(Result(List(Expense), HttpError))
+  GotResponse(Nil)
+  GotExpenses(List(Expense))
   AddExpense
   UpdateName(String)
   UpdateAmount(String)
@@ -68,21 +66,11 @@ fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         effect.none(),
       )
     }
-    GotResponse(Ok(_)) -> {
-      io.println("  /!\\ Got response")
+    GotResponse(Nil) -> {
       #(model, effect.none())
     }
-    GotResponse(Error(_)) -> {
-      io.println("  /!\\ Failed to get response")
-      #(model, effect.none())
-    }
-    GotExpenses(Ok(body)) -> {
-      io.println("  /!\\ Got expenses")
-      #(Model(..model, expenses: body), effect.none())
-    }
-    GotExpenses(Error(_)) -> {
-      io.println("  /!\\ Failed to get expenses")
-      #(model, effect.none())
+    GotExpenses(expenses) -> {
+      #(Model(..model, expenses: expenses), effect.none())
     }
   }
 }
@@ -90,27 +78,23 @@ fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
 // EFFECTS ---------------------------------------------------------------------
 
 fn add_expense(name: String, amount: Int) -> effect.Effect(Msg) {
-  // io.println("=== [FRONTEND] Adding expense... ===")
-  let url = "http://localhost:3000/add-expense"
-  let body =
-    json.object([#("name", json.string(name)), #("amount", json.int(amount))])
-  lustre_http.post(url, body, lustre_http.expect_anything(GotResponse))
+  use dispatch <- effect.from
+
+  let post = db.send_data(#(name, amount))
+
+  dispatch(GotResponse(post))
 }
 
 // TODO: Implement fetching expenses from a database
 fn fetch_expenses() -> effect.Effect(Msg) {
-  let url = "http://localhost:3000/get-expenses"
-  io.println("=== [FRONTEND] Fetching expenses... ===")
-  let decoder =
-    dynamic.decode2(
-      Expense,
-      dynamic.field("name", dynamic.string),
-      dynamic.field("amount", dynamic.int),
-    )
-  lustre_http.get(
-    url,
-    lustre_http.expect_json(dynamic.list(decoder), GotExpenses),
-  )
+  use dispatch <- effect.from
+
+  let get: List(#(String, Int)) = db.get_data()
+
+  let expenses_list =
+    list.map(get, fn(name_amount) { Expense(name_amount.0, name_amount.1) })
+
+  dispatch(GotExpenses(expenses_list))
 }
 
 // VIEW ------------------------------------------------------------------------

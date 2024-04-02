@@ -33,7 +33,7 @@ pub fn send_data(expense: #(String, Int)) {
   Nil
 }
 
-pub fn get_data() -> List(json.Json) {
+pub fn get_data() -> List(#(String, Int)) {
   use conn <- sqlight.with_connection("data.db")
   let expenses_decoder = dynamic.tuple2(dynamic.string, dynamic.int)
 
@@ -42,9 +42,6 @@ pub fn get_data() -> List(json.Json) {
     sqlight.query(sql, on: conn, with: [], expecting: expenses_decoder)
 
   expenses
-  |> list.map(fn(name_amount) {
-    expense_to_json(#(name_amount.0, name_amount.1))
-  })
 }
 
 fn expense_to_json(expense: #(String, Int)) -> json.Json {

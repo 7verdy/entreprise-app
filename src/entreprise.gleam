@@ -1,4 +1,4 @@
-import db.{send_data}
+import db.{create_table, get_data, send_data}
 import front
 import gleam/bit_array
 import gleam/bytes_builder
@@ -35,53 +35,6 @@ pub fn main() {
   let assert Ok(_) =
     fn(req: Request(Connection)) -> Response(ResponseData) {
       case request.path_segments(req) {
-        ["add-expense"] -> {
-          io.println("=== [SERVER] Adding expense... ===")
-          let decoder =
-            dynamic.decode2(
-              Expense,
-              dynamic.field("name", dynamic.string),
-              dynamic.field("amount", dynamic.int),
-            )
-          let body = case
-            mist.read_body(req, 1024)
-            |> result.map(fn(req) { req.body })
-          {
-            Ok(body) -> {
-              result.unwrap(json.decode_bits(body, decoder), Expense("", 0))
-            }
-            Error(_) -> Expense("", 0)
-          }
-
-          case body {
-            Expense("", 0) -> send_default_page()
-            _ -> {
-              db.send_data(#(body.name, body.amount))
-              send_default_page()
-            }
-          }
-        }
-
-        ["get-expenses"] -> {
-          io.println("=== [SERVER] Sending expenses... ===")
-          let data =
-            db.get_data()
-            |> iterator.from_list
-            |> iterator.map(fn(expense) { json.to_string_builder(expense) })
-            |> iterator.to_list
-            |> string_builder.concat
-
-          io.debug(data)
-
-          response.new(200)
-          |> response.prepend_header("content-type", "application/json")
-          |> response.set_body(
-            data
-            |> bytes_builder.from_string_builder
-            |> mist.Bytes,
-          )
-        }
-
         // Set up the websocket connection to the client. This is how we send
         // DOM updates to the browser and receive events from the client.
         ["expenses"] ->
