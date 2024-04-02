@@ -1,6 +1,9 @@
 import gleam/dynamic
+import gleam/fetch
+import gleam/http/request
 import gleam/int
 import gleam/io
+import gleam/javascript/promise
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -13,7 +16,7 @@ import lustre/element.{type Element}
 import lustre/element/html
 import lustre/event
 import lustre/ui
-import lustre_http
+import lustre_http.{type HttpError}
 
 // MAIN ------------------------------------------------------------------------
 
@@ -38,8 +41,8 @@ fn init(_) -> #(Model, effect.Effect(Msg)) {
 // UPDATE ----------------------------------------------------------------------
 
 pub type Msg {
-  GotResponse(Result(Nil, lustre_http.HttpError))
-  GotExpenses(Result(List(Expense), lustre_http.HttpError))
+  GotResponse(Result(Nil, HttpError))
+  GotExpenses(Result(List(Expense), HttpError))
   AddExpense
   UpdateName(String)
   UpdateAmount(String)
@@ -65,15 +68,20 @@ fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         effect.none(),
       )
     }
-    GotResponse(_) -> {
-      #(model, fetch_expenses())
+    GotResponse(Ok(_)) -> {
+      io.println("  /!\\ Got response")
+      #(model, effect.none())
+    }
+    GotResponse(Error(_)) -> {
+      io.println("  /!\\ Failed to get response")
+      #(model, effect.none())
     }
     GotExpenses(Ok(body)) -> {
-      io.debug(body)
+      io.println("  /!\\ Got expenses")
       #(Model(..model, expenses: body), effect.none())
     }
     GotExpenses(Error(_)) -> {
-      io.println("Failed to fetch expenses")
+      io.println("  /!\\ Failed to get expenses")
       #(model, effect.none())
     }
   }
@@ -82,30 +90,27 @@ fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
 // EFFECTS ---------------------------------------------------------------------
 
 fn add_expense(name: String, amount: Int) -> effect.Effect(Msg) {
-  io.println("[LOG] Adding expense...")
-  lustre_http.post(
-    "http://localhost:3000/add-expense",
-    json.object([#("name", json.string(name)), #("amount", json.int(amount))]),
-    lustre_http.expect_anything(GotResponse),
-  )
+  // io.println("=== [FRONTEND] Adding expense... ===")
+  let url = "http://localhost:3000/add-expense"
+  let body =
+    json.object([#("name", json.string(name)), #("amount", json.int(amount))])
+  lustre_http.post(url, body, lustre_http.expect_anything(GotResponse))
 }
 
 // TODO: Implement fetching expenses from a database
 fn fetch_expenses() -> effect.Effect(Msg) {
-  io.println("[LOG] Fetching expenses...")
+  let url = "http://localhost:3000/get-expenses"
+  io.println("=== [FRONTEND] Fetching expenses... ===")
   let decoder =
     dynamic.decode2(
       Expense,
       dynamic.field("name", dynamic.string),
       dynamic.field("amount", dynamic.int),
     )
-  let tmp =
-    lustre_http.get(
-      "http://localhost:3000/get-expenses",
-      lustre_http.expect_json(dynamic.list(decoder), GotExpenses),
-    )
-  io.debug(tmp)
-  tmp
+  lustre_http.get(
+    url,
+    lustre_http.expect_json(dynamic.list(decoder), GotExpenses),
+  )
 }
 
 // VIEW ------------------------------------------------------------------------

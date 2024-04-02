@@ -15,6 +15,9 @@ gleam_json = "~> 1.0"
 simplifile = "~> 1.6"
 sqlight = "~> 0.9"
 lustre_http = "~> 0.5"
+gleam_fetch = "~> 0.4"
+gleam_javascript = "~> 0.8"
 
 [dev-dependencies]
 gleeunit = "~> 1.0"
+lustre_dev_tools = "~> 1.1"

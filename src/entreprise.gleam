@@ -36,6 +36,7 @@ pub fn main() {
     fn(req: Request(Connection)) -> Response(ResponseData) {
       case request.path_segments(req) {
         ["add-expense"] -> {
+          io.println("=== [SERVER] Adding expense... ===")
           let decoder =
             dynamic.decode2(
               Expense,
@@ -46,21 +47,23 @@ pub fn main() {
             mist.read_body(req, 1024)
             |> result.map(fn(req) { req.body })
           {
-            Ok(body) ->
-              result.unwrap(
-                json.decode_bits(body, decoder),
-                Expense("default", 0),
-              )
+            Ok(body) -> {
+              result.unwrap(json.decode_bits(body, decoder), Expense("", 0))
+            }
             Error(_) -> Expense("", 0)
           }
 
-          db.send_data(#(body.name, body.amount))
-
-          send_default_page()
+          case body {
+            Expense("", 0) -> send_default_page()
+            _ -> {
+              db.send_data(#(body.name, body.amount))
+              send_default_page()
+            }
+          }
         }
 
         ["get-expenses"] -> {
-          io.println("[SERVER] Sending expenses...")
+          io.println("=== [SERVER] Sending expenses... ===")
           let data =
             db.get_data()
             |> iterator.from_list
@@ -120,7 +123,7 @@ pub fn main() {
 }
 
 fn send_default_page() -> Response(ResponseData) {
-  io.println("[SERVER] Sending default page...")
+  // io.println("[SERVER] Sending default page...")
   response.new(200)
   |> response.prepend_header("content-type", "text/html")
   |> response.set_body(
