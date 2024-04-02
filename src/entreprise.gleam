@@ -1,11 +1,14 @@
 import db.{send_data}
-import expenses
+import front
+import gleam/bit_array
 import gleam/bytes_builder
+import gleam/dynamic
 import gleam/erlang
 import gleam/erlang/process.{type Selector, type Subject}
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
 import gleam/int
+import gleam/io
 import gleam/iterator
 import gleam/json.{array, int, null, object, string}
 import gleam/option.{type Option, None}
@@ -19,7 +22,11 @@ import lustre/element/html.{html}
 import lustre/server_component
 import mist.{
   type Connection, type ResponseData, type WebsocketConnection,
-  type WebsocketMessage,
+  type WebsocketMessage, read_body,
+}
+
+pub type Expense {
+  Expense(name: String, amount: Int)
 }
 
 pub fn main() {
@@ -28,37 +35,31 @@ pub fn main() {
   let assert Ok(_) =
     fn(req: Request(Connection)) -> Response(ResponseData) {
       case request.path_segments(req) {
-        ["send-data"] -> {
-          let query = case request.get_query(req) {
-            Ok(query) -> query
-            Error(_) -> []
-          }
-          let expense_name = case
-            query
-            |> iterator.from_list
-            |> iterator.find(fn(name_value) { name_value.0 == "name" })
+        ["add-expense"] -> {
+          let decoder =
+            dynamic.decode2(
+              Expense,
+              dynamic.field("name", dynamic.string),
+              dynamic.field("amount", dynamic.int),
+            )
+          let body = case
+            mist.read_body(req, 1024)
+            |> result.map(fn(req) { req.body })
           {
-            Ok(name_value) -> name_value.1
-            Error(_) -> ""
+            Ok(body) ->
+              result.unwrap(
+                json.decode_bits(body, decoder),
+                Expense("default", 0),
+              )
+            Error(_) -> Expense("", 0)
           }
-          let expense_amount =
-            case
-              query
-              |> iterator.from_list
-              |> iterator.find(fn(name_value) { name_value.0 == "amount" })
-            {
-              Ok(name_value) -> name_value.1
-              Error(_) -> ""
-            }
-            |> int.parse
-            |> result.unwrap(0)
 
-          db.send_data(#(expense_name, expense_amount))
+          db.send_data(#(body.name, body.amount))
 
           send_default_page()
         }
 
-        ["get-data"] -> {
+        ["get-expenses"] -> {
           let data =
             db.get_data()
             |> iterator.from_list
@@ -116,6 +117,7 @@ pub fn main() {
 }
 
 fn send_default_page() -> Response(ResponseData) {
+  io.println("[SERVER] Sending default page...")
   response.new(200)
   |> response.prepend_header("content-type", "text/html")
   |> response.set_body(
@@ -146,12 +148,12 @@ fn send_default_page() -> Response(ResponseData) {
 }
 
 type Expenses =
-  Subject(lustre.Action(expenses.Msg, lustre.ServerComponent))
+  Subject(lustre.Action(front.Msg, lustre.ServerComponent))
 
 fn socket_init(
   conn: WebsocketConnection,
-) -> #(Expenses, Option(Selector(lustre.Patch(expenses.Msg)))) {
-  let app = expenses.app()
+) -> #(Expenses, Option(Selector(lustre.Patch(front.Msg)))) {
+  let app = front.app()
   let assert Ok(expenses) = lustre.start_actor(app, 0)
 
   process.send(
@@ -191,7 +193,7 @@ fn socket_init(
 fn socket_update(
   expenses: Expenses,
   _conn: WebsocketConnection,
-  msg: WebsocketMessage(lustre.Patch(expenses.Msg)),
+  msg: WebsocketMessage(lustre.Patch(front.Msg)),
 ) {
   case msg {
     mist.Text(json) -> {

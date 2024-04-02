@@ -18,6 +18,12 @@ pub fn create_table() {
 }
 
 pub fn send_data(expense: #(String, Int)) {
+  io.println(
+    "Sending data to the database "
+    <> expense.0
+    <> " "
+    <> int.to_string(expense.1),
+  )
   use conn <- sqlight.with_connection("data.db")
   let sql =
     string.concat([
