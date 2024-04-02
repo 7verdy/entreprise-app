@@ -60,12 +60,15 @@ pub fn main() {
         }
 
         ["get-expenses"] -> {
+          io.println("[SERVER] Sending expenses...")
           let data =
             db.get_data()
             |> iterator.from_list
             |> iterator.map(fn(expense) { json.to_string_builder(expense) })
             |> iterator.to_list
             |> string_builder.concat
+
+          io.debug(data)
 
           response.new(200)
           |> response.prepend_header("content-type", "application/json")
