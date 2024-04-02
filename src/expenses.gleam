@@ -28,18 +28,17 @@ pub type Expense {
 }
 
 pub type Model {
-  Model(name: String, amount: Int, expenses: List(Expense), length: Int)
+  Model(name: String, amount: Int, expenses: List(Expense))
 }
 
 fn init(_) -> #(Model, effect.Effect(Msg)) {
-  #(Model("", 0, [], 0), effect.none())
+  #(Model("", 0, []), effect.none())
 }
 
 // UPDATE ----------------------------------------------------------------------
 
 pub opaque type Msg {
   AddExpense
-  GetExpense(Result(String, lustre_http.HttpError))
   UpdateName(String)
   UpdateAmount(String)
 }
@@ -51,31 +50,10 @@ fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         Model(
           ..model,
           expenses: [Expense(model.name, model.amount), ..model.expenses],
-          length: model.length
-          + 1,
         ),
         effect.none(),
       )
     }
-    GetExpense(Ok(body)) -> {
-      let expense = case
-        json.decode(
-          body,
-          dynamic.field(
-            "data",
-            dynamic.field(
-              "expense",
-              dynamic.tuple2(dynamic.string, dynamic.int),
-            ),
-          ),
-        )
-      {
-        Ok(name_amount) -> Expense(name_amount.0, name_amount.1)
-        Error(_) -> Expense("Error", 0)
-      }
-      #(Model(..model, expenses: [expense, ..model.expenses]), effect.none())
-    }
-    GetExpense(Error(_)) -> #(model, effect.none())
     UpdateName(name) -> {
       #(Model(..model, name: name), effect.none())
     }
